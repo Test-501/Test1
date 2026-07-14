@@ -13,11 +13,11 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 
 app = Flask(__name__)
-# যেকোনো ডোমেইন থেকে অ্যাক্সেস অ্যালাউ করার জন্য (CORS)
-CORS(app)
+# Enable Global Resource Policy Allocation (CORS Handling)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # ==========================================
-# আপনার দেওয়া অরিজিনাল ফায়ারবেস সেটআপ 
+# Firebase Structural Management Connection
 # ==========================================
 firebase_service_account = {
   "type": "service_account",
@@ -38,125 +38,140 @@ try:
     cred = credentials.Certificate(firebase_service_account)
     firebase_admin.initialize_app(cred)
     db_client = firestore.client()
-    print("✅ Firebase Connected Pro Version!")
+    print("✅ Firebase Datastore Synchronized!")
 except Exception as e:
-    print(f"❌ Firebase Error: {e}")
+    print(f"❌ Firebase Link Interrupted: {e}")
 
 WORKSPACE_DIR = os.path.join(os.getcwd(), "bot_workspaces")
 BACKUP_DIR = os.path.join(os.getcwd(), "bot_backups")
 os.makedirs(WORKSPACE_DIR, exist_ok=True)
 os.makedirs(BACKUP_DIR, exist_ok=True)
 
-active_processes = {} # { bot_id: subprocess object }
-bot_configs = {}      # { bot_id: settings }
+active_processes = {} # Structures: { bot_id: SubprocessObject }
+bot_configs = {}      # Structures: { bot_id: configurationDict }
 
 # ==========================================
-# Pro Bot Execution Engine
+# Real-Time Operational Process Pipeline
 # ==========================================
-def run_bot_instance(bot_id):
+def orchestrate_bot_process(bot_id):
     bot_dir = os.path.join(WORKSPACE_DIR, bot_id)
     log_path = os.path.join(bot_dir, "console.log")
     
     settings = bot_configs.get(bot_id, {"auto_restart": True})
-    retry_count = 0
+    crash_retry_counter = 0
 
     while True:
         try:
             with open(log_path, "a", encoding="utf-8") as log_file:
-                log_file.write(f"\n[{time.strftime('%H:%M:%S')}] 🚀 Bot Engine Started...\n")
+                log_file.write(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] 🛠️ Initializing Process Node Subsystem...\n")
                 log_file.flush()
                 
-                start_time = time.time()
+                runtime_start_checkpoint = time.time()
                 
-                # Requirements Install Process
+                # Dependencies Verification & Real-time Installation logs output
                 req_path = os.path.join(bot_dir, "requirements.txt")
                 if os.path.exists(req_path):
-                    with open(req_path, "r") as f:
-                        reqs = f.read().strip()
-                    if reqs:
-                        log_file.write("📦 Installing dependencies from requirements.txt...\n")
+                    with open(req_path, "r", encoding="utf-8") as f:
+                        packages_list = f.read().strip()
+                    if packages_list:
+                        log_file.write("📦 Found custom dependencies. Executing dynamic package installation...\n")
                         log_file.flush()
-                        subprocess.run([sys.executable, "-m", "pip", "install", "-r", req_path], stdout=log_file, stderr=subprocess.STDOUT)
-                        log_file.write("✅ Dependencies installation complete.\n")
+                        
+                        installation_task = subprocess.run(
+                            [sys.executable, "-m", "pip", "install", "-r", req_path], 
+                            stdout=log_file, 
+                            stderr=subprocess.STDOUT
+                        )
+                        
+                        if installation_task.returncode == 0:
+                            log_file.write("✅ Package configuration completely resolved.\n")
+                        else:
+                            log_file.write("❌ Critical package install error detected.\n")
                         log_file.flush()
                 
-                # Run the Bot
-                log_file.write("🔥 Starting bot.py...\n")
+                # Executing primary target process with live log output
+                log_file.write("🔥 Booting operational execution tree from 'bot.py'...\n")
                 log_file.flush()
                 
-                process = subprocess.Popen(
+                execution_task = subprocess.Popen(
                     [sys.executable, "-u", "bot.py"], 
                     stdout=log_file, 
                     stderr=subprocess.STDOUT, 
                     cwd=bot_dir
                 )
                 
-                active_processes[bot_id] = process
+                active_processes[bot_id] = execution_task
                 if db_client:
                     db_client.collection("bot_instances").document(bot_id).update({"status": "running"})
                 
-                process.wait()
-                run_duration = time.time() - start_time
+                execution_task.wait() # Hold worker context open while thread runs
+                measured_operational_duration = time.time() - runtime_start_checkpoint
                 
-                # ROLLBACK SYSTEM
-                if process.returncode != 0 and run_duration < 10:
-                    log_file.write(f"\n🚨 CRASH DETECTED ({round(run_duration,1)}s). Attempting Rollback...\n")
+                # Dynamic Fail-safe Rollback Implementation
+                if execution_task.returncode != 0 and measured_operational_duration < 10:
+                    log_file.write(f"\n🚨 SYSTEM ANOMALY: Process crashed prematurely in {round(measured_operational_duration, 1)} seconds.\n")
+                    log_file.write("🔄 Rolling back workspace data parameters to target recovery checkpoint...\n")
+                    log_file.flush()
+                    
                     backup_dir = os.path.join(BACKUP_DIR, bot_id)
                     if os.path.exists(backup_dir):
                         try:
                             shutil.rmtree(bot_dir)
                             shutil.copytree(backup_dir, bot_dir)
-                            log_file.write("🔄 Rollback Successful! Restored previous working version.\n")
-                        except Exception as e:
-                            log_file.write(f"❌ Rollback failed: {e}\n")
+                            log_file.write("✅ Workspace structural parameters successfully rolled back to stable storage node. Process execution aborted.\n")
+                        except Exception as path_err:
+                            log_file.write(f"❌ Structural roll back transaction execution failed: {path_err}\n")
                     else:
-                        log_file.write("❌ No backup found to rollback.\n")
-                        break 
+                        log_file.write("❌ Safe roll back process denied: Verification recovery backup node doesn't exist.\n")
+                    log_file.flush()
+                    break 
                 
-                # AUTO RESTART CHECK
+                # Processing Auto-Restart Conditional Logic Verification
                 if not settings.get("auto_restart", True):
-                    log_file.write("\n⏹️ Auto-restart is disabled. Stopping naturally.\n")
+                    log_file.write("\n⏹️ Auto-restart configuration flag set to false. Context closed naturally.\n")
                     break
                 
-                if process.returncode == 0:
-                    log_file.write("\n✅ Bot exited gracefully with code 0.\n")
+                if execution_task.returncode == 0:
+                    log_file.write("\n✅ Operational routine finished executing gracefully (Exit Code 0).\n")
                     break 
                     
-                retry_count += 1
-                log_file.write(f"\n⚠️ Bot Crashed! Auto-restarting in 5 seconds... (Retry {retry_count})\n")
+                crash_retry_counter += 1
+                log_file.write(f"\n⚠️ Process engine error crash detected. Attempting automated recovery sequence in 5s... (Sequence: {crash_retry_counter})\n")
+                log_file.flush()
                 time.sleep(5)
 
-        except Exception as e:
+        except Exception as crash_exception:
             with open(log_path, "a", encoding="utf-8") as log_file:
-                log_file.write(f"\n💥 SYSTEM FATAL ERROR: {e}\n")
+                log_file.write(f"\n💥 CORRUPT APPLICATION PIPELINE EXCEPTION: {crash_exception}\n")
             break
             
-    # Cleanup
     if bot_id in active_processes:
         del active_processes[bot_id]
     if db_client:
         db_client.collection("bot_instances").document(bot_id).update({"status": "stopped"})
 
 # ==========================================
-# API Routes
+# REST API Interface Routing
 # ==========================================
 
 @app.route('/', methods=['GET'])
-def home():
+def server_root_check():
     return """
     <html>
-        <body style="background:#111; color:#0f0; font-family:monospace; padding:50px; text-align:center;">
-            <h1>✅ PyEngine API is running successfully!</h1>
-            <p>Your backend server on Render is online.</p>
+        <body style="background:#0b0f19; color:#38bdf8; font-family:monospace; padding:100px; text-align:center;">
+            <div style="border:1px solid #242f47; display:inline-block; padding:30px; border-radius:12px; background:#151b2c;">
+                <h1 style="color:#10b981; margin-bottom:10px;">✅ PyEngine Node Cluster Online</h1>
+                <p style="color:#94a3b8; font-size:14px;">The API backend service link endpoint is operating securely.</p>
+            </div>
         </body>
     </html>
     """
 
 @app.route('/api/deploy', methods=['POST'])
-def deploy_new_bot():
+def receive_deployment_manifest():
     payload = request.json
     bot_name = payload.get('bot_name')
-    files_dict = payload.get('files', {})
+    files_cluster = payload.get('files', {}) 
     settings = payload.get('settings', {"auto_restart": True})
     
     bot_id = str(uuid.uuid4().hex)[:10]
@@ -165,6 +180,7 @@ def deploy_new_bot():
     bot_dir = os.path.join(WORKSPACE_DIR, bot_id)
     backup_dir = os.path.join(BACKUP_DIR, bot_id)
     
+    # Save structural configuration state data for dynamic recovery loops
     if os.path.exists(bot_dir):
         if os.path.exists(backup_dir): 
             try: shutil.rmtree(backup_dir)
@@ -174,89 +190,97 @@ def deploy_new_bot():
     else:
         os.makedirs(bot_dir, exist_ok=True)
         
-    for filename, content in files_dict.items():
-        if content.strip() == "" and filename != "bot.py":
-            continue # Skip empty optional files
-        safe_filename = os.path.basename(filename) 
-        with open(os.path.join(bot_dir, safe_filename), "w", encoding="utf-8") as f:
-            f.write(content)
+    # Write structural file allocations directly onto localized disk matrices
+    for target_filename, code_payload in files_cluster.items():
+        if not code_payload.strip() and target_filename != "bot.py":
+            continue
+        sanitized_path = os.path.basename(target_filename) 
+        with open(os.path.join(bot_dir, sanitized_path), "w", encoding="utf-8") as storage_target:
+            storage_target.write(code_payload)
             
-    with open(os.path.join(bot_dir, "console.log"), "w", encoding="utf-8") as f:
-        f.write("System initializing files...\n")
+    # Purge historical log context traces
+    with open(os.path.join(bot_dir, "console.log"), "w", encoding="utf-8") as initial_log:
+        initial_log.write(f"📝 Dynamic deployment pipeline successfully initialized for '{bot_name}'.\n")
             
     if db_client:
-        metadata = {
+        meta_document = {
             "bot_name": bot_name,
-            "status": "deploying",
+            "status": "running",
             "settings": settings
         }
-        db_client.collection("bot_instances").document(bot_id).set(metadata)
+        db_client.collection("bot_instances").document(bot_id).set(meta_document)
     
-    threading.Thread(target=run_bot_instance, args=(bot_id,)).start()
+    # Fire processing runtime thread asynchronously
+    threading.Thread(target=orchestrate_bot_process, args=(bot_id,)).start()
     return jsonify({"success": True, "bot_id": bot_id})
 
 @app.route('/api/stats/<bot_id>', methods=['GET'])
-def get_stats(bot_id):
+def calculate_resource_allocation(bot_id):
     if bot_id in active_processes:
-        process = active_processes[bot_id]
+        target_process = active_processes[bot_id]
         try:
-            if process.poll() is None:
-                p = psutil.Process(process.pid)
-                cpu = p.cpu_percent(interval=0.1)
-                ram = p.memory_info().rss / (1024 * 1024)
-                return jsonify({"success": True, "cpu": round(cpu, 1), "ram": round(ram, 1)})
-        except psutil.NoSuchProcess:
+            if target_process.poll() is None:
+                process_tracker = psutil.Process(target_process.pid)
+                cpu_metric = process_tracker.cpu_percent(interval=0.05)
+                ram_bytes = process_tracker.memory_info().rss
+                ram_megabytes = ram_bytes / (1024 * 1024)
+                return jsonify({"success": True, "cpu": round(cpu_metric, 1), "ram": round(ram_megabytes, 1)})
+        except:
             pass
-    return jsonify({"success": False, "cpu": 0, "ram": 0})
+    return jsonify({"success": False, "cpu": 0.0, "ram": 0.0})
 
 @app.route('/api/instances', methods=['GET'])
-def get_instances():
-    if not db_client: 
-        return jsonify({"success": True, "data": {}, "message": "No Firebase"})
-    instances = {}
+def stream_instances_matrix():
+    instances_data_map = {}
+    if not db_client:
+        return jsonify({"success": True, "data": {}})
     try:
-        for doc in db_client.collection("bot_instances").stream():
-            data = doc.to_dict()
-            instances[doc.id] = {"bot_name": data.get("bot_name"), "status": data.get("status")}
-    except:
-        pass
-    return jsonify({"success": True, "data": instances})
+        for document in db_client.collection("bot_instances").stream():
+            doc_dict = document.to_dict()
+            instances_data_map[document.id] = {
+                "bot_name": doc_dict.get("bot_name"),
+                "status": doc_dict.get("status")
+            }
+    except Exception as data_err:
+        print(f"Matrix parsing issue: {data_err}")
+    return jsonify({"success": True, "data": instances_data_map})
 
 @app.route('/api/action/<action_type>/<bot_id>', methods=['POST'])
-def handle_action(action_type, bot_id):
+def enforce_node_actions(action_type, bot_id):
     if action_type in ["stop", "restart", "delete"]:
         if bot_id in active_processes:
-            process = active_processes[bot_id]
-            if process.poll() is None:
-                process.terminate()
+            active_worker = active_processes[bot_id]
+            if active_worker.poll() is None:
+                active_worker.terminate()
             
     if action_type == "restart":
-        threading.Thread(target=run_bot_instance, args=(bot_id,)).start()
+        threading.Thread(target=orchestrate_bot_process, args=(bot_id,)).start()
         
     if action_type == "delete":
         if db_client: 
             db_client.collection("bot_instances").document(bot_id).delete()
-        bot_dir = os.path.join(WORKSPACE_DIR, bot_id)
-        if os.path.exists(bot_dir): 
-            try: shutil.rmtree(bot_dir)
+        bot_target_dir = os.path.join(WORKSPACE_DIR, bot_id)
+        if os.path.exists(bot_target_dir): 
+            try: shutil.rmtree(bot_target_dir)
             except: pass
         
     return jsonify({"success": True})
 
 @app.route('/api/logs/<bot_id>', methods=['GET'])
-def get_logs(bot_id):
-    log_path = os.path.join(WORKSPACE_DIR, bot_id, "console.log")
-    if os.path.exists(log_path):
+def extract_live_console_logs(bot_id):
+    target_log_matrix = os.path.join(WORKSPACE_DIR, bot_id, "console.log")
+    if os.path.exists(target_log_matrix):
         try:
-            with open(log_path, "r", encoding="utf-8") as f:
-                content = f.read()
-                return jsonify({"success": True, "logs": content[-15000:]}) 
+            with open(target_log_matrix, "r", encoding="utf-8") as stream_source:
+                log_data_buffer = stream_source.read()
+                # Return tail block segment smoothly to conserve interface processing limits
+                return jsonify({"success": True, "logs": log_data_buffer[-20000:]}) 
         except:
-            return jsonify({"success": False, "logs": "Error reading logs."})
-    return jsonify({"success": False, "logs": "No logs generated yet."})
+            return jsonify({"success": False, "logs": "File execution stream lock error."})
+    return jsonify({"success": False, "logs": "Pipeline streaming offline..."})
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port, threaded=True)
+    target_binding_port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=target_binding_port, threaded=True)
 
 
