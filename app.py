@@ -6,7 +6,7 @@ import subprocess
 import time
 import shutil
 import sys
-import psutil # pip install psutil
+import psutil
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import firebase_admin
@@ -51,7 +51,7 @@ active_processes = {} # { bot_id: subprocess object }
 bot_configs = {}      # { bot_id: settings }
 
 # ==========================================
-# Pro Bot Execution Engine (Rollback & Auto-Restart)
+# Pro Bot Execution Engine
 # ==========================================
 def run_bot_instance(bot_id):
     bot_dir = os.path.join(WORKSPACE_DIR, bot_id)
@@ -98,9 +98,8 @@ def run_bot_instance(bot_id):
                 process.wait() # Wait for process to end/crash
                 run_duration = time.time() - start_time
                 
-                # --- ROLLBACK SYSTEM ---
+                # ROLLBACK SYSTEM
                 if process.returncode != 0 and run_duration < 10:
-                    # যদি ১০ সেকেন্ডের আগেই ক্র্যাশ করে, তবে রোলব্যাক করবে
                     log_file.write(f"\n🚨 CRASH DETECTED ({round(run_duration,1)}s). Attempting Rollback...\n")
                     backup_dir = os.path.join(BACKUP_DIR, bot_id)
                     if os.path.exists(backup_dir):
@@ -112,16 +111,16 @@ def run_bot_instance(bot_id):
                             log_file.write(f"❌ Rollback failed: {e}\n")
                     else:
                         log_file.write("❌ No backup found to rollback.\n")
-                        break # No backup, stop trying
+                        break 
                 
-                # --- AUTO RESTART CHECK ---
+                # AUTO RESTART CHECK
                 if not settings.get("auto_restart", True):
                     log_file.write("\n⏹️ Auto-restart is disabled. Stopping naturally.\n")
                     break
                 
                 if process.returncode == 0:
                     log_file.write("\n✅ Bot exited gracefully with code 0.\n")
-                    break # Natural exit, don't restart
+                    break 
                     
                 retry_count += 1
                 log_file.write(f"\n⚠️ Bot Crashed! Auto-restarting in 5 seconds... (Retry {retry_count})\n")
@@ -132,14 +131,14 @@ def run_bot_instance(bot_id):
                 log_file.write(f"\n💥 SYSTEM FATAL ERROR: {e}\n")
             break
             
-    # Loop ended - Cleanup
+    # Cleanup
     if bot_id in active_processes:
         del active_processes[bot_id]
     if db_client:
         db_client.collection("bot_instances").document(bot_id).update({"status": "stopped"})
 
 # ==========================================
-# Scheduler System (Background Thread)
+# Scheduler System
 # ==========================================
 def cron_scheduler():
     while True:
@@ -148,7 +147,6 @@ def cron_scheduler():
                 docs = db_client.collection("bot_instances").where("status", "==", "scheduled").stream()
                 for doc in docs:
                     bot_id = doc.id
-                    # For a real cron job, you'd parse cron syntax here
                     if bot_id not in active_processes:
                         threading.Thread(target=run_bot_instance, args=(bot_id,)).start()
         except Exception:
@@ -160,11 +158,24 @@ threading.Thread(target=cron_scheduler, daemon=True).start()
 # ==========================================
 # API Routes
 # ==========================================
+
+# 404 Error ফিক্স করার জন্য হোম রুট যুক্ত করা হলো
+@app.route('/', methods=['GET'])
+def home():
+    return """
+    <html>
+        <body style="background:#111; color:#0f0; font-family:monospace; padding:50px; text-align:center;">
+            <h1>✅ PyEngine API is running successfully!</h1>
+            <p>Your backend server on Render is online.</p>
+        </body>
+    </html>
+    """
+
 @app.route('/api/deploy', methods=['POST'])
 def deploy_new_bot():
     payload = request.json
     bot_name = payload.get('bot_name')
-    files_dict = payload.get('files', {}) # Multiple files support
+    files_dict = payload.get('files', {})
     settings = payload.get('settings', {"auto_restart": True})
     cron = payload.get('cron', '')
     
@@ -174,7 +185,7 @@ def deploy_new_bot():
     bot_dir = os.path.join(WORKSPACE_DIR, bot_id)
     backup_dir = os.path.join(BACKUP_DIR, bot_id)
     
-    # Create Backup of old version if updating
+    # Create Backup
     if os.path.exists(bot_dir):
         if os.path.exists(backup_dir): 
             try: shutil.rmtree(backup_dir)
@@ -184,9 +195,8 @@ def deploy_new_bot():
     else:
         os.makedirs(bot_dir, exist_ok=True)
         
-    # Write Multiple Files from Monaco Editor
+    # Write Files
     for filename, content in files_dict.items():
-        # Prevent path traversal attacks
         safe_filename = os.path.basename(filename) 
         with open(os.path.join(bot_dir, safe_filename), "w", encoding="utf-8") as f:
             f.write(content)
@@ -204,7 +214,6 @@ def deploy_new_bot():
         }
         db_client.collection("bot_instances").document(bot_id).set(metadata)
     
-    # Start thread
     threading.Thread(target=run_bot_instance, args=(bot_id,)).start()
     return jsonify({"success": True, "bot_id": bot_id})
 
@@ -213,11 +222,10 @@ def get_stats(bot_id):
     if bot_id in active_processes:
         process = active_processes[bot_id]
         try:
-            # Check if process is still running
             if process.poll() is None:
                 p = psutil.Process(process.pid)
                 cpu = p.cpu_percent(interval=0.1)
-                ram = p.memory_info().rss / (1024 * 1024) # Convert to MB
+                ram = p.memory_info().rss / (1024 * 1024)
                 return jsonify({"success": True, "cpu": round(cpu, 1), "ram": round(ram, 1)})
         except psutil.NoSuchProcess:
             pass
@@ -237,7 +245,7 @@ def handle_action(action_type, bot_id):
     if action_type in ["stop", "restart", "delete"]:
         if bot_id in active_processes:
             process = active_processes[bot_id]
-            if process.poll() is None: # If process is alive
+            if process.poll() is None:
                 process.terminate()
             
     if action_type == "restart":
@@ -259,7 +267,6 @@ def get_logs(bot_id):
     if os.path.exists(log_path):
         try:
             with open(log_path, "r", encoding="utf-8") as f:
-                # Read last 15000 characters safely
                 content = f.read()
                 return jsonify({"success": True, "logs": content[-15000:]}) 
         except:
@@ -267,7 +274,6 @@ def get_logs(bot_id):
     return jsonify({"success": False, "logs": "No logs generated yet."})
 
 if __name__ == '__main__':
-    # Ensure psutil is installed properly
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, threaded=True)
 
