@@ -60,7 +60,7 @@ def run_bot_instance(bot_id):
     settings = bot_configs.get(bot_id, {"auto_restart": True})
     retry_count = 0
 
-    while True: # Auto-restart Loop
+    while True:
         try:
             with open(log_path, "a", encoding="utf-8") as log_file:
                 log_file.write(f"\n[{time.strftime('%H:%M:%S')}] 🚀 Bot Engine Started...\n")
@@ -95,7 +95,7 @@ def run_bot_instance(bot_id):
                 if db_client:
                     db_client.collection("bot_instances").document(bot_id).update({"status": "running"})
                 
-                process.wait() # Wait for process to end/crash
+                process.wait()
                 run_duration = time.time() - start_time
                 
                 # ROLLBACK SYSTEM
@@ -138,28 +138,9 @@ def run_bot_instance(bot_id):
         db_client.collection("bot_instances").document(bot_id).update({"status": "stopped"})
 
 # ==========================================
-# Scheduler System
-# ==========================================
-def cron_scheduler():
-    while True:
-        try:
-            if db_client:
-                docs = db_client.collection("bot_instances").where("status", "==", "scheduled").stream()
-                for doc in docs:
-                    bot_id = doc.id
-                    if bot_id not in active_processes:
-                        threading.Thread(target=run_bot_instance, args=(bot_id,)).start()
-        except Exception:
-            pass
-        time.sleep(60)
-
-threading.Thread(target=cron_scheduler, daemon=True).start()
-
-# ==========================================
 # API Routes
 # ==========================================
 
-# 404 Error ফিক্স করার জন্য হোম রুট যুক্ত করা হলো
 @app.route('/', methods=['GET'])
 def home():
     return """
@@ -177,7 +158,6 @@ def deploy_new_bot():
     bot_name = payload.get('bot_name')
     files_dict = payload.get('files', {})
     settings = payload.get('settings', {"auto_restart": True})
-    cron = payload.get('cron', '')
     
     bot_id = str(uuid.uuid4().hex)[:10]
     bot_configs[bot_id] = settings
@@ -185,7 +165,6 @@ def deploy_new_bot():
     bot_dir = os.path.join(WORKSPACE_DIR, bot_id)
     backup_dir = os.path.join(BACKUP_DIR, bot_id)
     
-    # Create Backup
     if os.path.exists(bot_dir):
         if os.path.exists(backup_dir): 
             try: shutil.rmtree(backup_dir)
@@ -195,13 +174,13 @@ def deploy_new_bot():
     else:
         os.makedirs(bot_dir, exist_ok=True)
         
-    # Write Files
     for filename, content in files_dict.items():
+        if content.strip() == "" and filename != "bot.py":
+            continue # Skip empty optional files
         safe_filename = os.path.basename(filename) 
         with open(os.path.join(bot_dir, safe_filename), "w", encoding="utf-8") as f:
             f.write(content)
             
-    # Clear old log
     with open(os.path.join(bot_dir, "console.log"), "w", encoding="utf-8") as f:
         f.write("System initializing files...\n")
             
@@ -209,7 +188,6 @@ def deploy_new_bot():
         metadata = {
             "bot_name": bot_name,
             "status": "deploying",
-            "cron": cron,
             "settings": settings
         }
         db_client.collection("bot_instances").document(bot_id).set(metadata)
@@ -233,11 +211,15 @@ def get_stats(bot_id):
 
 @app.route('/api/instances', methods=['GET'])
 def get_instances():
-    if not db_client: return jsonify({"success": False})
+    if not db_client: 
+        return jsonify({"success": True, "data": {}, "message": "No Firebase"})
     instances = {}
-    for doc in db_client.collection("bot_instances").stream():
-        data = doc.to_dict()
-        instances[doc.id] = {"bot_name": data.get("bot_name"), "status": data.get("status")}
+    try:
+        for doc in db_client.collection("bot_instances").stream():
+            data = doc.to_dict()
+            instances[doc.id] = {"bot_name": data.get("bot_name"), "status": data.get("status")}
+    except:
+        pass
     return jsonify({"success": True, "data": instances})
 
 @app.route('/api/action/<action_type>/<bot_id>', methods=['POST'])
