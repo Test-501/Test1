@@ -24,7 +24,6 @@ os.makedirs(BACKUP_DIR, exist_ok=True)
 active_processes = {}
 bot_configs = {}
 db_client = None
-system_boot_time = time.time()
 
 firebase_service_account = {
   "type": "service_account",
@@ -67,86 +66,79 @@ def kill_process_tree(pid, including_parent=True):
     except:
         pass
 
-def write_log(bot_dir, text_content):
-    log_path = os.path.join(bot_dir, "console.log")
-    try:
-        with open(log_path, "a", encoding="utf-8") as log_file:
-            log_file.write(f"{text_content}\n")
-            log_file.flush()
-    except:
-        pass
-
 def orchestrate_bot_process(bot_id):
     bot_dir = os.path.join(WORKSPACE_DIR, bot_id)
+    log_path = os.path.join(bot_dir, "console.log")
     settings = bot_configs.get(bot_id, {"auto_restart": True})
     crash_retry_counter = 0
 
     while True:
         try:
-            write_log(bot_dir, f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] SYSTEM_BOOT: Termux Engine Started")
-            
-            runtime_start = time.time()
-            libs_dir = os.path.join(bot_dir, "libs")
-            os.makedirs(libs_dir, exist_ok=True)
-            
-            req_path = os.path.join(bot_dir, "requirements.txt")
-            if os.path.exists(req_path):
-                with open(req_path, "r", encoding="utf-8") as f:
-                    packages = f.read().strip()
-                if packages:
-                    write_log(bot_dir, "[PKG_MANAGER] Installing required packages...")
-                    log_file = open(os.path.join(bot_dir, "console.log"), "a", encoding="utf-8")
-                    subprocess.run(
-                        [sys.executable, "-m", "pip", "install", "-t", libs_dir, "-r", req_path], 
-                        stdout=log_file, 
-                        stderr=subprocess.STDOUT
-                    )
-                    log_file.close()
-
-            custom_env = os.environ.copy()
-            if "PYTHONPATH" in custom_env:
-                custom_env["PYTHONPATH"] = f"{libs_dir}{os.pathsep}{custom_env['PYTHONPATH']}"
-            else:
-                custom_env["PYTHONPATH"] = libs_dir
-
-            write_log(bot_dir, "[EXECUTION] Launching bot.py...")
-            log_file = open(os.path.join(bot_dir, "console.log"), "a", encoding="utf-8")
-            
-            execution_task = subprocess.Popen(
-                [sys.executable, "-u", "bot.py"], 
-                stdout=log_file, 
-                stderr=subprocess.STDOUT, 
-                cwd=bot_dir,
-                env=custom_env
-            )
-            
-            active_processes[bot_id] = execution_task
-            if db_client:
-                db_client.collection("bot_instances").document(bot_id).update({"status": "running"})
-            
-            execution_task.wait() 
-            log_file.close()
-            
-            measured_duration = time.time() - runtime_start
-            
-            if bot_id in active_processes:
-                del active_processes[bot_id]
-            
-            if not settings.get("auto_restart", True):
-                write_log(bot_dir, "[TERMINATED] Auto-restart is disabled.")
-                break
-            
-            if execution_task.returncode == 0:
-                write_log(bot_dir, "[EXIT] Process completed successfully.")
-                break 
+            with open(log_path, "a", encoding="utf-8") as log_file:
+                log_file.write(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] System Booting...\n")
+                log_file.flush()
                 
-            crash_retry_counter += 1
-            write_log(bot_dir, f"[ERROR] Process crashed. Exit code: {execution_task.returncode}")
-            write_log(bot_dir, f"[RECOVERY] Attempting restart in 5 seconds (Try {crash_retry_counter})...")
-            time.sleep(5)
+                runtime_start = time.time()
+                libs_dir = os.path.join(bot_dir, "libs")
+                os.makedirs(libs_dir, exist_ok=True)
+                
+                req_path = os.path.join(bot_dir, "requirements.txt")
+                if os.path.exists(req_path):
+                    with open(req_path, "r", encoding="utf-8") as f:
+                        packages = f.read().strip()
+                    if packages:
+                        log_file.write("Installing dependencies...\n")
+                        log_file.flush()
+                        subprocess.run(
+                            [sys.executable, "-m", "pip", "install", "-t", libs_dir, "-r", req_path], 
+                            stdout=log_file, 
+                            stderr=subprocess.STDOUT
+                        )
+                        log_file.write("Dependencies installed.\n")
+                        log_file.flush()
+
+                custom_env = os.environ.copy()
+                if "PYTHONPATH" in custom_env:
+                    custom_env["PYTHONPATH"] = f"{libs_dir}{os.pathsep}{custom_env['PYTHONPATH']}"
+                else:
+                    custom_env["PYTHONPATH"] = libs_dir
+
+                log_file.write("Executing bot.py...\n")
+                log_file.flush()
+                
+                execution_task = subprocess.Popen(
+                    [sys.executable, "-u", "bot.py"], 
+                    stdout=log_file, 
+                    stderr=subprocess.STDOUT, 
+                    cwd=bot_dir,
+                    env=custom_env
+                )
+                
+                active_processes[bot_id] = execution_task
+                if db_client:
+                    db_client.collection("bot_instances").document(bot_id).update({"status": "running"})
+                
+                execution_task.wait() 
+                
+                if bot_id in active_processes:
+                    del active_processes[bot_id]
+                
+                if not settings.get("auto_restart", True):
+                    log_file.write("Process stopped. Auto-restart is disabled.\n")
+                    break
+                
+                if execution_task.returncode == 0:
+                    log_file.write("Process completed successfully.\n")
+                    break 
+                    
+                crash_retry_counter += 1
+                log_file.write(f"Process crashed. Restarting in 5s... (Attempt {crash_retry_counter})\n")
+                log_file.flush()
+                time.sleep(5)
 
         except Exception as e:
-            write_log(bot_dir, f"[FATAL_ERROR] {str(e)}")
+            with open(log_path, "a", encoding="utf-8") as log_file:
+                log_file.write(f"\nCRITICAL ERROR: {str(e)}\n")
             break
             
     if bot_id in active_processes:
@@ -177,7 +169,7 @@ def sync_bots_from_database():
                     
             if not os.path.exists(os.path.join(bot_dir, "console.log")):
                 with open(os.path.join(bot_dir, "console.log"), "w", encoding="utf-8") as f:
-                    f.write("[SYSTEM] Node synchronized from Database.\n")
+                    f.write("System synchronized.\n")
                     
             threading.Thread(target=orchestrate_bot_process, args=(bot_id,), daemon=True).start()
     except:
@@ -185,12 +177,7 @@ def sync_bots_from_database():
 
 @app.route('/', methods=['GET'])
 def server_root_check():
-    return jsonify({
-        "status": "online",
-        "uptime": round(time.time() - system_boot_time, 2),
-        "cpu_usage": psutil.cpu_percent(),
-        "ram_usage": psutil.virtual_memory().percent
-    })
+    return jsonify({"status": "online", "message": "PyEngine Core"})
 
 @app.route('/api/deploy', methods=['POST'])
 def receive_deployment_manifest():
@@ -200,7 +187,7 @@ def receive_deployment_manifest():
     settings = payload.get('settings', {"auto_restart": True})
     
     if not bot_name or not files_cluster.get('bot.py'):
-        return jsonify({"success": False, "error": "Invalid payload validation failed."})
+        return jsonify({"success": False, "error": "Invalid payload"})
 
     bot_id = str(uuid.uuid4().hex)[:12]
     bot_configs[bot_id] = settings
@@ -216,7 +203,7 @@ def receive_deployment_manifest():
             storage_target.write(code_payload)
             
     with open(os.path.join(bot_dir, "console.log"), "w", encoding="utf-8") as initial_log:
-        initial_log.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] [DEPLOY] Generating container for {bot_name}...\n")
+        initial_log.write(f"Deploying {bot_name}...\n")
             
     if db_client:
         try:
@@ -256,7 +243,7 @@ def calculate_resource_allocation(bot_id):
 def stream_instances_matrix():
     instances_data_map = {}
     if not db_client:
-        return jsonify({"success": False, "error": "Database error"})
+        return jsonify({"success": False})
         
     try:
         for document in db_client.collection("bot_instances").stream():
